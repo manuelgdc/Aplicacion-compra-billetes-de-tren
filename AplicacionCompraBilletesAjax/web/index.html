@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Renfe</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script type="text/javascript">
+            var peticion_http = null;
+            var listaSugerencias = null;
+            var elementoSeleccionado = -1;
+            var cacheSugerencias = {};
+            var sugOriDes;
+            var oriDes;
+            var elEvento;
+            function inicializa_xhr() {
+                if (window.XMLHttpRequest) {
+                    return new XMLHttpRequest();
+                } else if (window.ActiveXObject) {
+                    return new ActiveXObject("Microsoft.XMLHTTP");
+                }
+            }
+            function autoCompletaOrigen() {
+                elEvento = arguments[0] || window.event;
+                sugOriDes = "sugerenciasOrigen";
+                oriDes = "origen";
+                autoCompleta();
+            }
+            function autoCompletaDestino() {
+                elEvento = arguments[0] || window.event;
+                sugOriDes = "sugerenciasDestino";
+                oriDes = "destino";
+                autoCompleta();
+            }
+            function autoCompleta() {
+                var tecla = elEvento.keyCode;
+                if (tecla == 40) { // Flecha Abajo
+                    if (elementoSeleccionado + 1 < listaSugerencias.length) {
+                        elementoSeleccionado++;
+                    }
+                    muestraSugerencias();
+                } else if (tecla == 38) { // Flecha Arriba
+                    if (elementoSeleccionado > 0) {
+                        elementoSeleccionado--;
+                    }
+                    muestraSugerencias();
+                } else if (tecla == 13) { // Intro
+                    seleccionaElemento();
+                } else {
+                    var texto = document.getElementById(oriDes).value;
+                    if (tecla == 8 && texto == "") { // Si es la tecla de borrado y el texto es vacío, ocultar la lista
+                        borraLista();
+                        return;
+                    }
+                    if (cacheSugerencias[texto] == null) {
+                        peticion_http = inicializa_xhr();
+                        peticion_http.onreadystatechange = function () {
+                            if (peticion_http.readyState == 4 && peticion_http.status == 200) {
+                                var respuesta_json = peticion_http.responseText;
+                                listaSugerencias = eval("(" + respuesta_json + ")");
+                                if (listaSugerencias.length == 0) {
+                                    sinResultados();
+                                } else {
+                                    cacheSugerencias[texto] = listaSugerencias;
+                                    actualizaSugerencias();
+                                }
+                            }
+                        };
+                        if (oriDes == "origen") {
+                            peticion_http.open("POST", "autocomplementaorigen.jsp", true);
+                        } else if (oriDes == "destino") {
+                            peticion_http.open("POST", "autocomplementadestino.jsp", true);
+                        }
+                        peticion_http.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                        peticion_http.send("textMuni=" + encodeURIComponent(texto) + "&nocache=" + Math.random());
+                    } else {
+                        listaSugerencias = cacheSugerencias[texto];
+                        actualizaSugerencias();
+                    }
+                }
+            }
+            function actualizaSugerencias() {
+                elementoSeleccionado = -1;
+                muestraSugerencias();
+            }
+            function seleccionaElemento() {
+                if (listaSugerencias[elementoSeleccionado]) {
+                    document.getElementById(oriDes).value = listaSugerencias[elementoSeleccionado];
+                    borraLista();
+                }
+            }
+            function muestraSugerencias() {
+                document.getElementById(sugOriDes).innerHTML = formateaLista();
+                document.getElementById(sugOriDes).style.display = 'block';
+            }
+            function formateaLista() {
+                var codigoHtml = "<ul>";
+                for (var i = 0; i < listaSugerencias.length; i++) {
+                    if (i == elementoSeleccionado) {
+                        codigoHtml += "<li class=\"seleccionado\">" + listaSugerencias[i] + "</li>";
+                    } else {
+                        codigoHtml += "<li>" + listaSugerencias[i] + "</li>";
+                    }
+                }
+                codigoHtml += "</ul>";
+                return codigoHtml;
+            }
+            function sinResultados() {
+                document.getElementById(sugOriDes).innerHTML = "No existen municipios que empiecen con ese texto";
+                document.getElementById(sugOriDes).style.display = "block";
+            }
+            function borraLista() {
+                document.getElementById(sugOriDes).innerHTML = "";
+                document.getElementById(sugOriDes).style.display = "none";
+            }
+            function anularIntro(e) {
+                var tecla = (document.all) ? e.keyCode : e.which;
+                return (tecla != 13);
+            }
+
+            window.onload = function () {
+                document.getElementById("origen").onkeyup = autoCompletaOrigen;
+                document.getElementById("origen").onblur = borraLista;
+                document.getElementById("destino").onkeyup = autoCompletaDestino;
+                document.getElementById("destino").onblur = borraLista;
+
+            };
+            function validacion() {
+                var origen = document.getElementById("origen").value;
+                var destino = document.getElementById("destino").value;
+                var fechaSalida = document.getElementById("salida").value;
+                var fechaRegreso = document.getElementById("regreso").value;
+                if (origen == "") {
+                    alert("Seleccione un origen.");
+                    return false;
+                } else if (destino == "") {
+                    alert("Seleccione un destino.");
+                    return false;
+                } else if (origen == destino) {
+                    alert("El origen no puede ser igual que el destino.");
+                    return false;
+                } else if (fechaSalida == "") {
+                    alert("Seleccione una fecha de salida.");
+                    return false;
+                } else if (fechaRegreso == "") {
+                    alert("Seleccione una fecha de regreso.");
+                    return false;
+                } else if (fechaSalida > fechaRegreso) {
+                    alert("La fecha de regreso debe ser posterior a la de salida");
+                    return false;
+                }
+                return true;
+            }
+        </script>
+        <style type="text/css">
+            body {font-family: Arial, Helvetica, sans-serif;}
+            #sugerenciasOrigen {width: 200px; border: 1px solid black; background-color: #FFFFFF; display: none; position: fixed;}
+            #sugerenciasOrigen ul {list-style: none; margin: 0; padding: 0; font-size: .85em;}
+            #sugerenciasOrigen ul li {padding: .2em; border-bottom: 1px solid silver;}
+            #sugerenciasDestino {width: 200px; border: 1px solid black; background-color: #FFFFFF; display: none; position: fixed;}
+            #sugerenciasDestino ul {list-style: none; margin: 0; padding: 0; font-size: .85em;}
+            #sugerenciasDestino ul li {padding: .2em; border-bottom: 1px solid silver;}
+            .seleccionado {font-weight: bold; background-color: #8a0072; color: #FFFFFF}
+        </style>
+    </head>
+    <body bgcolor="#e1e2d8">
+        <form action="reserva.jsp" method="POST" autocomplete="off" onkeypress="return anularIntro(event)" onsubmit="return validacion()">
+            <table border="0" align="center" style="border-width: 0px; border-spacing: 5px;">
+                <tr>
+                    <td align="center" bgcolor="white" style="border-radius: 7px;"><img src="images/Titulo.png" /></td>
+                </tr>
+                <tr>
+                    <td align="center" bgcolor="white" style="border-radius: 7px; padding: 5px 15px;">
+                        <table width="100%" border="0" align="center">
+                            <tr>
+                                <td><b>ORIGEN</b></td>
+                                <td align="center">
+                                    <input type="text" id="origen" name="origen" style="width:100%"  />
+                                    <div id="sugerenciasOrigen"></div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><b>DESTINO</b></td>
+                                <td align="center">
+                                    <input type="text" id="destino" name="destino" style="width:100%" />
+                                    <div id="sugerenciasDestino"></div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td bgcolor="white" style="border-radius: 7px; padding: 5px 15px;">
+                        <table width="100%" border="1" align="center" style="border-width: 0px;">
+                            <tr>
+                                <td colspan="2" style="border-width: 0px 2px 0px 0px; border-style: dotted;"><b>FECHA DEL VIAJE</b></td>
+                                <td colspan="3" style="border-width: 0px;"><b>HORARIOS</b></td>
+                            </tr>
+                            <tr>
+                                <td colspan="5" style="border-width: 2px 0px 0px 0px; border-style: dotted;"></td>
+                            </tr>
+                            <tr>
+                                <td rowspan="2" align="right" style="border-width: 0px;"><b>SALIDA</b></td>
+                                <td rowspan="2" align="center" style="border-width: 0px;">
+                                    <input type="date" id="salida" name="salida" />
+                                </td>
+                                <td align="center" style="border-width: 0px;">
+                                    <input type="radio" name="hSalida" value="Manana" checked="checked" />
+                                </td>
+                                <td align="center" style="border-width: 0px;">
+                                    <input type="radio" name="hSalida" value="Tarde" />
+                                </td>
+                                <td align="center" style="border-width: 0px;">
+                                    <input type="radio" name="hSalida" value="Noche" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td align="center" style="border-width: 0px;"><b>MAÑANA</b></td>
+                                <td align="center" style="border-width: 0px;"><b>TARDE</b></td>
+                                <td align="center" style="border-width: 0px;"><b>NOCHE</b></td>
+                            </tr>
+                            <tr>
+                                <td colspan="5" style="border-width: 2px 0px 0px 0px; border-style: dotted;"></td>
+                            </tr>
+                            <tr>
+                                <td rowspan="2" align="right" style="border-width: 0px;"><b>REGRESO</b></td>
+                                <td rowspan="2" align="center" style="border-width: 0px;">
+                                    <input type="date" id="regreso" name="regreso" />
+                                </td>
+                                <td align="center" style="border-width: 0px;">
+                                    <input type="radio" name="hRegreso" value="Manana" checked="checked" />
+                                </td>
+                                <td align="center" style="border-width: 0px;">
+                                    <input type="radio" name="hRegreso" value="Tarde" />
+                                </td>
+                                <td align="center" style="border-width: 0px;">
+                                    <input type="radio" name="hRegreso" value="Noche" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td align="center" style="border-width: 0px;"><b>MAÑANA</b></td>
+                                <td align="center" style="border-width: 0px;"><b>TARDE</b></td>
+                                <td align="center" style="border-width: 0px;"><b>NOCHE</b></td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td bgcolor="white" style="border-radius: 7px; padding: 5px 15px;">
+                        <table width="100%" border="1" align="center" style="border-width: 0px; border-collapse: collapse;">
+                            <tr>
+                                <td colspan="2" align="center" style="border-width: 0px 2px 0px 0px; border-style: dotted;"><b>ADULTOS</b></td>
+                                <td colspan="2" align="center" style="border-width: 0px 2px 0px 0px; border-style: dotted;"><b>NIÑOS 4-13</b></td>
+                                <td colspan="2" align="center" style="border-width: 0px;"><b>NIÑOS &lt;4</b></td>
+                            </tr>
+                            <tr>
+                                <td align="right" style="border-width: 0px;"><img src="images/Adultos.png" /></td>
+                                <td align="center" style="border-width: 0px 2px 0px 0px; border-style: dotted;">
+                                    <input type="number" min="1" max="10" value="1" id="adultos" name="adultos" />
+                                </td>
+                                <td align="right" style="border-width: 0px"><img src="images/Ninios13.png" /></td>
+                                <td align="center" style="border-width: 0px 2px 0px 0px; border-style: dotted;">
+                                    <input type="number" min="0" max="10" value="0" id="ninos13" name="ninos13" />
+                                </td>
+                                <td align="right" style="border-width: 0px"><img src="images/Ninios4.png" /></td>
+                                <td align="center" style="border-width: 0px;">
+                                    <input type="number" min="0" max="10" value="0" id="ninos4" name="ninos4" />
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td align="center" style="border-radius: 7px;">
+                        <input type="submit" value="" style="width:100%; height:50px; border-radius: 7px; background:url('images/Boton.png') left center no-repeat;" />
+                    </td>
+                </tr>
+            </table>
+        </form>
+    </body>
+</html>
